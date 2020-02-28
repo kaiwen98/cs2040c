@@ -4,7 +4,7 @@ class treeNode;
 class queueNode {
 public:
 	queueNode(treeNode *a) { val = a; next = NULL; }
-	queueNode() { val = NULL; next = NULL; }
+	queueNode() { val = NULL; next = NULL; }sdsdsdsa
 	friend class queue;
 	friend class tree;
 	friend class treeNode;
