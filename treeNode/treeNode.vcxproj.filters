@@ -18,13 +18,13 @@
     <ClCompile Include="queue.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="tree.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="printTree.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="print_tree.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="tree.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

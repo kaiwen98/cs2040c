@@ -1,31 +1,30 @@
 #pragma once
 #include <iostream>
-class treeNode;
+template <class T>
+class queue;
+
+template <class T>
 class queueNode {
 public:
-	queueNode(treeNode *a) { val = a; next = NULL; }
-	queueNode() { val = NULL; next = NULL; }sdsdsdsa
-	friend class queue;
-	friend class tree;
-	friend class treeNode;
-	
+	queueNode(T a) { val = a; next = NULL; }
+	queueNode() { val = NULL; next = NULL; }
+	friend class queue<T>;
 
-
-	treeNode *val;
-	queueNode* next;
+	T val;
+	queueNode<T>* next;
 };
 
 
+template <class T>
 class queue {
 public:
 	queue() { head = NULL; size = 0; }
 	~queue() { while (size > 0) pop_from_front(); }
-	void push_to_back(treeNode* a);
+	void push_to_back(T a);
 	void pop_from_front();
 	void printQueue();
 
-
-	queueNode* head;
+	queueNode<T>* head;
 	int size;
 };
 /*

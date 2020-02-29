@@ -1,4 +1,4 @@
-#pragma once
+/*#pragma once
 
 #ifndef TREEHPP
 #define TREEHPP
@@ -105,3 +105,4 @@ void tree::postOrderTrasversal(treeNode* node) {
 
 
 #endif
+*/

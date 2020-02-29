@@ -124,9 +124,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="printTree.cpp" />
-    <ClCompile Include="queue.cpp" />
     <ClCompile Include="tree.cpp" />
+    <ClCompile Include="queue.cpp" />
+    <ClCompile Include="print_tree.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="queue.h" />
