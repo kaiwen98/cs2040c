@@ -17,13 +17,17 @@ public:
 	void preOrderTrasversal(treeNode*);
 	void postOrderTrasversal() { postOrderTrasversal(root); }
 	void postOrderTrasversal(treeNode*);
+	void reverseOrderTrasversal(treeNode*);
+	void reverseOrderTrasversal() { reverseOrderTrasversal(root); }
 
 	
 
 	void printTree();
 	int findMaxVal();
+	int findMinVal();
 	int findNumSpace(int);
 	int findTreeHeight();
+	bool exist(int a);
 
 	
 	void printZero(int);
@@ -33,6 +37,13 @@ public:
 
 	void printTreeFromQueue(queue<treeNode*>* q1);
 	void enqueue(treeNode* node, queue<treeNode*>* q1);
+	void printTreeRot(bool printHeight) {
+		printTreeRot(root, printHeight);
+	}
+
+	void printTreeRot(treeNode* node, bool printHeight);
+	void printNode(treeNode* node, bool printHeight);
+
 };
 
 

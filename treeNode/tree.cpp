@@ -22,6 +22,20 @@ tree::tree() {
 	root = NULL;
 }
 
+bool tree::exist(int a) {
+	treeNode* temp = root;
+	while (temp != NULL) {
+		if (temp->val == a) return true;
+		else if (temp->val < a) {
+			temp = temp->right;
+		}
+		else {
+			temp = temp->left;
+		}
+	}
+	return false;
+}
+
 treeNode* tree::insertTreeNode(int a, treeNode* node) {
 
 	if (root == NULL) {
@@ -44,6 +58,14 @@ int tree::findMaxVal() {
 	treeNode* temp = root;
 	while (temp->right != NULL) {
 		temp = temp->right;
+	}
+	return temp->val;
+}
+
+int tree::findMinVal() {
+	treeNode* temp = root;
+	while (temp->left != NULL) {
+		temp = temp->left;
 	}
 	return temp->val;
 }
@@ -90,12 +112,21 @@ void tree::preOrderTrasversal(treeNode* node) {
 	return;
 }
 
+void tree::reverseOrderTrasversal(treeNode* node) {
+	if (node->right != NULL)reverseOrderTrasversal(node->right);
+	cout << node->val <<" ";
+	if (node->left != NULL)reverseOrderTrasversal(node->left);
+	return;
+}
+
 void tree::postOrderTrasversal(treeNode* node) {
 	if (node->left != NULL) postOrderTrasversal(node->left);
 	if (node->right != NULL) postOrderTrasversal(node->right);
 	cout << node->val << " ";
 	return;
 }
+
+
 
 ostream& operator<<(ostream& os, treeNode* node) {
 	os << node->val;

@@ -14,9 +14,19 @@ int main() {
 	testQueue(&q1);
 	test(q1);
 
-	int arr[12] = { 10,2,3,1,7,8,11,13,14,18,16,12};
-	testTree(&t1, arr, 12);
+	int arr[16] = { 7,3,11,1,5,9,13,0,2,4,6,8,10,12,14};
+	testTree(&t1, arr, 16);
+
+	t1.reverseOrderTrasversal();
+
+	cout << endl << endl;
+	t1.printTreeRot(true);
+	cout << endl << endl;
 	t1.printTree();
+	int num = 69;
+	cout << num;  (t1.exist(num) == true) ? cout << " exists" << endl : cout << " do not exist" << endl;
+	
+
 	cout << "Lowest val is " << t1.findLowestVal(t1.root) << endl;
 	return 0;
 }

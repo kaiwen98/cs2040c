@@ -124,6 +124,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="printTreeRot.cpp" />
     <ClCompile Include="tree.cpp" />
     <ClCompile Include="queue.cpp" />
     <ClCompile Include="print_tree.cpp" />
@@ -131,9 +132,7 @@
   <ItemGroup>
     <ClInclude Include="queue.h" />
     <ClInclude Include="queue.hpp" />
-    <ClInclude Include="tree.hpp" />
     <ClInclude Include="tree.h" />
-    <ClInclude Include="tree2.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

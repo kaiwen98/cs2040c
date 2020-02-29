@@ -27,6 +27,9 @@
     <ClCompile Include="tree.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="printTreeRot.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="tree.h">
@@ -36,12 +39,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="queue.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="tree.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="tree2.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

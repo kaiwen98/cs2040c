@@ -2,17 +2,18 @@
 #include "tree.h"
 #include <iostream>
 #include <cmath>
+#include <iomanip>
 using namespace std;
 
 
 
 int tree::findNumSpace(int height) {
-	return pow(2, height) - 1;
+	return pow(2, height)-2 ;
 }
 
 
 void tree::printZero(int n) {
-	for (int i = 0; i < n; i++) cout << "  ";
+	for (int i = 0; i < n; i++) cout << " ";
 }
 
 void tree::printVert(int n, int height, queue<int> &levelCode) {
@@ -23,12 +24,12 @@ void tree::printVert(int n, int height, queue<int> &levelCode) {
 
 	for (int i = 0; i <= n / 2; i++) {
 		j = 0;
-
+		//printZero(1);
 		while (j < pow(2, height)) {
-			printZero(n -i - 1);
+			printZero(n -i);
 			(temp->val == 1) ? cout << "/" : cout << " ";
 			temp = temp->next;
-			printZero(i * 2 + 1);
+			printZero(i * 2 +1);
 			(temp->val == 1) ? cout << "\\" : cout << " ";
 			j++;
 			printZero(n - i + 1);
@@ -62,7 +63,7 @@ void tree::printTreeFromQueue(queue<treeNode*>* q1) {
 	int height = findTreeHeight();
 	int val;
 	for (int i = height; i >= 0; i--) {
-		printZero(findNumSpace(i));
+		printZero(findNumSpace(i+1));
 		for (int j = 0; j < pow(2, height - i) && q1->head != NULL; j++) {
 
 			val = (qptr->val->left != NULL)? 1:0;
@@ -70,15 +71,18 @@ void tree::printTreeFromQueue(queue<treeNode*>* q1) {
 			val = (qptr->val->right != NULL) ? 1 : 0;
 			levelCode.push_to_back(val);
 
-			if (qptr->val->containNum == true) cout << qptr->val ;
-			else cout << "x ";
+			if (qptr->val->containNum == true) {
+				((qptr->val->val) / 10 == 0) ? cout << "0" : cout << "";
+				cout << qptr->val << "";
+			}
+			else cout << "  ";
 
-			printZero(findNumSpace(i + 1));
+			printZero(findNumSpace(i+2));
 			qptr = qptr->next;
 			q1->pop_from_front();
 		}
 		cout << endl;
-		printVert(findNumSpace(i), height - i, levelCode);
+		printVert(findNumSpace(i+1), height - i, levelCode);
 		
 		while (levelCode.head != NULL) levelCode.pop_from_front();
 	}
