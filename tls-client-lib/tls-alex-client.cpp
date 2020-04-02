@@ -8,6 +8,20 @@
 // Packet types, error codes, etc.
 #include "constants.h"
 
+//Addtional libraries from Alex_working
+#include <stdio.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <unistd.h>
+#include <stdint.h>
+#include <time.h>
+#include <ncurses.h>
+#include "packet.h"
+#include "serial.h"
+#include "serialize.h"
+#include "constants.h"
+#include "unistd.h"
+
 // Tells us that the network is running.
 static volatile int networkActive=0;
 
@@ -153,6 +167,30 @@ void getParams(int32_t *params)
 	flushInput();
 }
 
+
+//Transferred from alex_working
+void getParamsAuto(int32_t *params)
+{
+	switch (commandPacket->command) {
+	case COMMAND_FORWARD:
+		params[0] = 0;
+		params[1] = 65;
+		break;
+	case COMMAND_REVERSE:
+		params[0] = 0;
+		params[1] = 65;
+		break;
+	case COMMAND_TURN_LEFT:
+		params[0] = 0;
+		params[1] = 85;
+		break;
+	case COMMAND_TURN_RIGHT:
+		params[0] = 0;
+		params[1] = 85;
+		break;
+	}
+}
+
 void *writerThread(void *conn)
 {
 	int quit=0;
@@ -172,6 +210,15 @@ void *writerThread(void *conn)
 		buffer[0] = NET_COMMAND_PACKET;
 		switch(ch)
 		{
+			
+		case 'p':
+		case'P':
+			mode = (mode == 1) ? 0 : 1;
+			break;
+			
+		
+		
+		
 			case 'f':
 			case 'F':
 			case 'b':
@@ -185,6 +232,23 @@ void *writerThread(void *conn)
 						memcpy(&buffer[2], params, sizeof(params));
 						sendData(conn, buffer, sizeof(buffer));
 						break;
+
+
+			case 'w':
+			case 'W':
+			case 'a':
+			case 'A':
+			case 's':
+			case 'S':
+			case 'd':
+			case 'D':
+				getParamsAuto(params);
+				buffer[1] = ch;
+				memcpy(&buffer[2], params, sizeof(params));
+				sendData(conn, buffer, sizeof(buffer));
+				break;
+
+		    
 			case 's':
 			case 'S':
 			case 'c':

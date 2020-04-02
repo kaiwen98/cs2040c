@@ -26,7 +26,8 @@ int count = 0;
 int dircount = 0;
 int state = 0;
 int commandflag = 0;
-
+int ok_flag = 1;
+int toggle = 0;
 sem_t _xmitSema;
 
 void handleError(TResult error)
@@ -68,6 +69,7 @@ void handleResponse(TPacket *packet)
 	switch(packet->command)
 	{
 		case RESP_OK:
+			ok_flag = 1;
 			printf("Command OK\n\r");
 			break;
 
@@ -139,6 +141,7 @@ void sendPacket(TPacket *packet)
 	int len = serialize(buffer, packet, sizeof(TPacket));
 
 	serialWrite(buffer, len);
+	ok_flag = 0;
 }
 
 void *receiveThread(void *p)
@@ -182,7 +185,7 @@ void flushInput()
 void getParams(TPacket *commandPacket)
 {
 	printf("Enter distance/angle in cm/degrees (e.g. 50) and power in %% (e.g. 75) separated by space.\n\r");
-	printf("E.g. 50 75 means go at 50 cm at 75%% power for forward/backward, or 50 degrees left or right turn at 75%%  power\n\r");
+	printf("E.g. 50 75 means go at 50 cm at 75%% power for forward/backward for 50 degrees left or right turn at 75%%  power\n\r");
 	scanf("%d %d", &commandPacket->params[0], &commandPacket->params[1]);
 	flushInput();
 }
@@ -192,19 +195,19 @@ void getParamsAuto(TPacket *commandPacket)
 	switch(commandPacket->command){
 		case COMMAND_FORWARD:
 			commandPacket->params[0] = 0;
-			commandPacket->params[1] = 50;
+			commandPacket->params[1] = 65;
 			break;
 		case COMMAND_REVERSE:
 			commandPacket->params[0] = 0;
-			commandPacket->params[1] = 50;
+			commandPacket->params[1] = 65;
 			break;
 		case COMMAND_TURN_LEFT:
-			commandPacket->params[0] = 0;
-			commandPacket->params[1] = 50;
+			commandPacket->params[0] = 5;
+			commandPacket->params[1] = 85;
 			break;
 		case COMMAND_TURN_RIGHT: 
-			commandPacket->params[0] = 0;
-			commandPacket->params[1] = 50;
+			commandPacket->params[0] = 5;
+			commandPacket->params[1] = 85;
 			break;
 	}
 }
@@ -224,29 +227,29 @@ void sendCommand(char command)
 
 		case 'w':
 		case 'W':
-			getParamsAuto(&commandPacket);
 			commandPacket.command = COMMAND_FORWARD;
+			getParamsAuto(&commandPacket);
 			sendPacket(&commandPacket);
 			break;
 
 		case 'a':
 		case 'A':
-			getParamsAuto(&commandPacket);
 			commandPacket.command = COMMAND_TURN_LEFT;
+			getParamsAuto(&commandPacket);
 			sendPacket(&commandPacket);
 			break;
 
 		case 's':
 		case 'S':
-			getParamsAuto(&commandPacket);
 			commandPacket.command = COMMAND_REVERSE;
+			getParamsAuto(&commandPacket);
 			sendPacket(&commandPacket);
 			break;
 
 		case 'd':
 		case 'D':
-			getParamsAuto(&commandPacket);
 			commandPacket.command = COMMAND_TURN_RIGHT;
+			getParamsAuto(&commandPacket);
 			sendPacket(&commandPacket);
 			break;
 
@@ -327,7 +330,12 @@ void sendCommand(char command)
 
 
 void* change_detect_thread(void* p){
-	if(command == -1) command = prevcommand;
+	while(1){
+	  toggle = 1- toggle;
+	  usleep(1000*30);
+	}
+		
+		//printw("toggle is %d\n", toggle);
 	/*clock_t time;
 	  int count = 0;
 	  int curr;
@@ -368,18 +376,30 @@ void* change_detect_thread(void* p){
 	} */
 
 
-	}
+}
 
 void* movement_change_thread(void* p){
-	char prev = 'x';	
+	char prev = 'x';
+	int count = 0;
+		
 	while(1){
+		if(command == 'a' || command == 'd'){
+			command = count%2? command: 'x';
+			count++;
+			usleep(10000);
+		}
 		if(command != prev){
 			//	if(command == 'x') printw("Easy Mode (w=forward, s=reverse, a=turn left, d=turn right, x = stop, c=clear stats, g=get stats, q=exit)\n");
+			
+			
 			prev = command;
 			finalcommand = command;
 			commandflag = 1;
-			sendCommand(finalcommand);
-			commandflag = 0;
+			if (ok_flag){
+			       	sendCommand(finalcommand);
+				
+			}
+			
 
 		}
 	}
@@ -428,6 +448,7 @@ int main()
 	helloPacket.packetType = PACKET_TYPE_HELLO;
 	sendPacket(&helloPacket);
 
+        ok_flag = 1;
 
 	while(!exitFlag)
 	{
@@ -451,32 +472,61 @@ int main()
 					nodelay(stdscr, TRUE);
 					scrollok(stdscr, TRUE);
 				}
-				start = 1;
+				start = 1;	
+			
+	printw("toggle is %d\n", toggle);
 
-				if(j == 1){
+				if(j >  0){
 					//printw("character of d is %c\n", d);
 					//printw("Number of d is %d\n", d);
-					command = (d == -1 || d == (char)255)? prevcommand:d;
+					command = (d == -1 || d == (char)255)? prevcommand : d;
 					prevcommand = command;
-					if(_count <= 1) usleep(490000);
-				//	printw("button\n");
+					if(_count <= 1) usleep(470000);
+				
+			//		printw("button\n");
 
 				} 
-				else if(i%2 == 0){
+				else if(i%3 == 0){
 					command = 'x';
 					prevcommand = command;
-				//	printw("end\n");
+			//		printw("end\n");
 
 				}
-				
+				if(ok_flag) printw("Ready!\n");
+				else{
+				       	printw("Busy!\n");
+					getch();
+						
+				}
 				printw("command is %c\n", finalcommand);
+
+
+				/*if(!kbhit()){
+					_count = 0;
+					i++;
+					j = 0;
+					refresh();
+					usleep(70000);
+				}
+
+				else{
+					getch();
+					i = 0;
+					j++;
+					_count++;
+					refresh();
+				}*/
+
+
+
 
 				if (kbhit()) {
 					getch();
 					i = 0;
-					j = 1;
+					j++;
 					_count++;
 					refresh();
+				
 				} 
 				
 				else {
@@ -484,7 +534,7 @@ int main()
 					i++;
 					j = 0;
 					refresh();
-					usleep(35000);
+					usleep(70000);
 				}
 				break;
 		}

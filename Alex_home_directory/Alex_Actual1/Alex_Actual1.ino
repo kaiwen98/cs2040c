@@ -1,6 +1,6 @@
 
 #include <serialize.h>
-
+#include <avr/sleep.h> 
 #include "packet.h"
 #include "constants.h"
 #include <math.h>
@@ -10,6 +10,76 @@
 #define _BACKWARD 2
 #define _LEFT 3
 #define _RIGHT 4
+
+#define PRR_TWI_MASK            0b10000000 
+#define PRR_SPI_MASK            0b00000100 
+#define ADCSRA_ADC_MASK         0b10000000 
+#define PRR_ADC_MASK            0b00000001 
+#define PRR_TIMER2_MASK         0b01000000 
+#define PRR_TIMER0_MASK         0b00100000 
+#define PRR_TIMER1_MASK         0b00001000 
+#define SMCR_SLEEP_ENABLE_MASK  0b00000001 
+#define SMCR_IDLE_MODE_MASK     0b11110001 
+//#define PIN5 0b00010000;/
+
+void WDT_off(void) 
+{ 
+/* Global interrupt should be turned OFF here if not already done so */ 
+ 
+/* Clear WDRF in MCUSR */ 
+MCUSR &= ~(1<<WDRF); 
+ 
+/* Write logical one to WDCE and WDE */ 
+/* Keep old prescaler setting to prevent unintentional 
+time-out */ 
+WDTCSR |= (1<<WDCE) | (1<<WDE); 
+ 
+/* Turn off WDT */ 
+WDTCSR = 0x00; 
+ 
+/* Global interrupt should be turned ON here if subsequent operations after calling this function do 
+not require turning off global interrupt */ 
+} 
+
+void setupPowerSaving() 
+{ 
+  // Turn off the Watchdog Timer   
+  WDT_off();
+  // Modify PRR to shut down TWI 
+  PRR |= PRR_TWI_MASK; 
+  // Modify PRR to shut down SPI 
+  PRR |= PRR_SPI_MASK;
+  // Modify ADCSRA to disable ADC,  
+  // then modify PRR to shut down ADC
+  ADCSRA &= ~ADCSRA_ADC_MASK;
+  PRR |= PRR_ADC_MASK;
+  // Set the SMCR to choose the IDLE sleep mode   // Do not set the Sleep Enable (SE) bit yet 
+  SMCR &= SMCR_IDLE_MODE_MASK;
+  // Set Port B Pin 5 as output pin, then write a logic LOW   // to it so that the LED tied to Arduino's Pin 13 is OFF. 
+  DDRB |= (1<<5);
+  PORTB &= ~(1<<5);
+} 
+
+void putArduinoToIdle() 
+{ 
+  // Modify PRR to shut down TIMER 0, 1, and 2 
+  PRR |= (PRR_TIMER2_MASK | PRR_TIMER0_MASK| PRR_TIMER1_MASK);
+
+  
+  // Modify SE bit in SMCR to enable (i.e., allow) sleep 
+  SMCR |= SMCR_SLEEP_ENABLE_MASK;
+  // The following function puts ATmega328P’s MCU into sleep; 
+  // it wakes up from sleep when USART serial data arrives 
+  sleep_cpu(); 
+  
+  // Modify SE bit in SMCR to disable (i.e., disallow) sleep 
+  SMCR &= ~SMCR_SLEEP_ENABLE_MASK;
+  // Modify PRR to power up TIMER 0, 1, and 2 
+  PRR &= ~(PRR_TIMER2_MASK | PRR_TIMER0_MASK | PRR_TIMER1_MASK);
+
+} 
+ 
+
 
 
 /*
@@ -74,6 +144,20 @@ volatile unsigned long leftReverseTicksTurns;
 volatile unsigned long rightForwardTicksTurns;
 volatile unsigned long rightReverseTicksTurns; 
 
+// Store the ticks from Alex's left and
+// right encoders.
+volatile unsigned long _leftForwardTicks; 
+volatile unsigned long _leftReverseTicks; 
+volatile unsigned long _rightForwardTicks;
+volatile unsigned long _rightReverseTicks; 
+
+//Turn counter
+volatile unsigned long _leftForwardTicksTurns; 
+volatile unsigned long _leftReverseTicksTurns; 
+volatile unsigned long _rightForwardTicksTurns;
+volatile unsigned long _rightReverseTicksTurns; 
+
+
 
 // Store the revolutions on Alex's left
 // and right wheels
@@ -88,6 +172,8 @@ unsigned long deltaDist;
 unsigned long newDist;
 unsigned long deltaTicks;
 unsigned long targetTicks;
+
+volatile int _count = 0;
 
 float AlexDiagonal = 0.0;
 float AlexCirc = 0.0;
@@ -394,46 +480,99 @@ int pwmVal(float speed)
 // Specifying a distance of 0 means Alex will
 // continue moving forward indefinitely.
 
+
+void dbprint(char *format, ...) {
+  va_list args;
+  char buffer[128];
+
+  va_start(args, format);
+  vsprintf(buffer, format, args);
+  sendMessage(buffer);
+}
+
+
+
+
+
 void calibrateMotors(){
-  int error;
-  error = (error < 0)? -error: error;
+  double error;
+  int curr_left = 0;
+  int curr_right = 0;
+  
   double val = curr_pwm;
+
+  
+  _count++;
+  //dbprint("%d, best count is %d\n", millis(), _count);
+  
   switch(dir){
     case FORWARD:
-      error = leftForwardTicks - rightForwardTicks;
-      if(error){
-        val += error / kval[_FORWARD];
-        analogWrite(RF, val);
-        delayMicroseconds(1);
       
+      curr_left = leftForwardTicks;
+      curr_right = rightForwardTicks;
+      delayMicroseconds(50000);
+      curr_left = leftForwardTicks - curr_left;
+      curr_right = rightForwardTicks - curr_right;
+      error = curr_left - curr_right;
+      //dbprint("time in millis() is %d\n", millis());
+      
+      if(error){
+        val += error*20;
+        curr_pwm = (val>255)?255:
+                   (val < 0)?0:
+                   val;
+        analogWrite(RF, curr_pwm);
       }
     break;
 
     case BACKWARD:
-      error = leftReverseTicks - rightReverseTicks;
-      if(error){
-        val += error / kval[_BACKWARD];
-        analogWrite(RR, val);
-        delayMicroseconds(1);
+      curr_left = leftReverseTicks;
+      curr_right = rightReverseTicks;
+      delayMicroseconds(50000);
+      curr_left = leftReverseTicks - curr_left;
+      curr_right = rightReverseTicks - curr_right;
+      error = curr_left - curr_right;
       
+      if(error){
+        val += error*20;
+        curr_pwm = (val>255)?255:
+                   (val < 0)?0:
+                   val;
+        analogWrite(RR, curr_pwm);
       }
     break;
 
     case RIGHT:
-      error = leftForwardTicksTurns - rightReverseTicksTurns;
+      curr_left = leftForwardTicksTurns;
+      curr_right = rightReverseTicksTurns;
+      delayMicroseconds(5000);
+      curr_left = leftForwardTicksTurns - curr_left;
+      curr_right = rightReverseTicksTurns - curr_right;
+      error = curr_left - curr_right;
+      
       if(error){
-        val += error / kval[_RIGHT];
-        analogWrite(RR, val);
-        delayMicroseconds(1);
+        val += error*20;
+        curr_pwm = (val>255)?255:
+                   (val < 0)?0:
+                   val;
+        analogWrite(RR, curr_pwm);
       }
     break;
 
     case LEFT:
-      error = leftReverseTicksTurns - rightForwardTicksTurns;
+      curr_left = leftReverseTicksTurns;
+      curr_right = rightForwardTicksTurns;
+      delayMicroseconds(5000);
+      curr_left = leftReverseTicksTurns - curr_left;
+      curr_right = rightForwardTicksTurns - curr_right;
+      
+      error = curr_left - curr_right;
       if(error){
-        val += error / kval[_LEFT];
-        analogWrite(RF, val);
-        delayMicroseconds(1);
+        val += error*20;
+        curr_pwm = (val>255)?255:
+                   (val < 0)?0:
+                   val;
+        analogWrite(RF, curr_pwm);
       }
     break;
 
@@ -441,8 +580,8 @@ void calibrateMotors(){
       stop();
     break;
   }
+  
 }
-
 
 
 
@@ -458,7 +597,7 @@ void forward(float dist, float speed)
   dir = FORWARD;
   
   int val = pwmVal(speed);
-  curr_pwm = val;
+  curr_pwm = 1.36*val;
   int error = leftForwardTicks - rightForwardTicks;
   // For now we will ignore dist and move
   // forward indefinitely. We will fix this
@@ -487,7 +626,7 @@ void reverse(float dist, float speed)
 {
   dir = BACKWARD;
   int val = pwmVal(speed);
-  curr_pwm = val;
+  curr_pwm = 1.36*val;
 
   if(dist > 0) deltaDist = dist;
   else deltaDist = 9999999;
@@ -500,7 +639,7 @@ void reverse(float dist, float speed)
   // RF = Right forward pin, RR = Right reverse pin
   // This will be replaced later with bare-metal code.
   analogWrite(LR, val);
-  analogWrite(RR, val);
+  analogWrite(RR, curr_pwm);
   analogWrite(LF, 0);
   analogWrite(RF, 0);
 
@@ -522,7 +661,7 @@ void left(float ang, float speed)
 {
   dir = LEFT;
   int val = pwmVal(speed);
-  curr_pwm = val;
+  curr_pwm = (1*val > 255)?255: 1*val;
   if(ang == 0) deltaTicks = 9999999;
   else deltaTicks = computeDeltaTicks(ang);
   targetTicks = leftReverseTicksTurns + deltaTicks;
@@ -532,7 +671,7 @@ void left(float ang, float speed)
   // We will also replace this code with bare-metal later.
   // To turn left we reverse the left wheel and move
   // the right wheel forward.
-  analogWrite(RF, val);
+  analogWrite(RF, curr_pwm);
   analogWrite(LR, val);
   analogWrite(RR, 0);
   analogWrite(LF, 0);
@@ -548,7 +687,7 @@ void right(float ang, float speed)
 {
   dir = RIGHT;
   int val = pwmVal(speed);
-  curr_pwm = val;
+  curr_pwm = (val*1.36 > 255)? 255: 1.36*val;
 
   if(ang == 0) deltaTicks = 9999999;
   else deltaTicks = computeDeltaTicks(ang);
@@ -558,7 +697,7 @@ void right(float ang, float speed)
   // We will also replace this code with bare-metal later.
   // To turn right we reverse the right wheel and move
   // the left wheel forward.
-  analogWrite(RR, val);
+  analogWrite(RR, curr_pwm);
   analogWrite(LF, val);
   analogWrite(RF, 0);
   analogWrite(LR, 0);
@@ -574,7 +713,7 @@ void stop()
   analogWrite(LR, 0);
   analogWrite(RF, 0);
   analogWrite(RR, 0);
-  
+ 
 }
 
 /*
@@ -693,6 +832,7 @@ void handleCommand(TPacket *command)
     default:
       sendBadCommand();
   }
+  
 }
 
 void waitForHello()
@@ -743,7 +883,8 @@ void setup() {
   startMotors();
   enablePullups();
   initializeState();
-
+  setupPowerSaving();
+  
   AlexDiagonal = sqrt((ALEX_LENGTH * ALEX_LENGTH) + (ALEX_BREADTH * ALEX_BREADTH));
   AlexCirc = PI * AlexDiagonal;
   sei();
@@ -773,6 +914,7 @@ void handlePacket(TPacket *packet)
 }
 
 void loop() {
+  
 
 // Uncomment the code below for Step 2 of Activity 3 in Week 8 Studio 2
 
@@ -811,32 +953,38 @@ void loop() {
         deltaDist = 0;
         newDist = 0;
         stop();
+//        /putArduinoToIdle();
       }
     }
-  }
-  else{
-    if(dir == BACKWARD){
-      if(reverseDist > newDist){
-        deltaDist = 0;
-        newDist = 0;
-        stop();
-      }
-    }
+  
     else{
-      if(dir == STOP){
-        deltaDist = 0;
-        newDist = 0;
-        stop();
+      if(dir == BACKWARD){
+        if(reverseDist > newDist){
+          deltaDist = 0;
+          newDist = 0;
+          stop();
+//          /putArduinoToIdle();
+        }
+      
+        else{
+          if(dir == STOP){
+            putArduinoToIdle();
+            deltaDist = 0;
+            newDist = 0;
+            stop();
+//           
+          }
+        }
       }
     }
   }
-
   if(deltaTicks > 0){
     if(dir == LEFT){
       if(leftReverseTicksTurns >= targetTicks){
         deltaTicks = 0;
         targetTicks = 0;
         stop();
+//        /putArduinoToIdle();
       }
     }
     else{
@@ -845,12 +993,15 @@ void loop() {
           deltaTicks = 0;
           targetTicks = 0;
           stop();
+//          /putArduinoToIdle();
         }
         else{
           if(dir == STOP){
+            putArduinoToIdle();
             deltaTicks = 0;
             targetTicks = 0;
             stop();
+            
           }
         }
       }

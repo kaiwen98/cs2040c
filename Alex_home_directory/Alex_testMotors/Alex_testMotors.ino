@@ -46,6 +46,8 @@ volatile TDirection dir = STOP;
 
 #define WHEEL_CIRC          22
 
+#include <stdarg.h>
+
 // Motor control pins. You need to adjust these till
 // Alex moves in the correct direction
 #define LF                  10   // Left forward pin
@@ -73,6 +75,8 @@ volatile unsigned long leftForwardTicksTurns;
 volatile unsigned long leftReverseTicksTurns; 
 volatile unsigned long rightForwardTicksTurns;
 volatile unsigned long rightReverseTicksTurns; 
+volatile unsigned long _leftForwardTicks = 0;
+volatile unsigned long _rightForwardTicks = 0;
 
 
 // Store the revolutions on Alex's left
@@ -96,7 +100,9 @@ float AlexCirc = 0.0;
 //bool rightMotorCalibrated = false;
 
 double tickDifference = 0.0;
-double curr_pwm = 0.0;
+double curr_pwm_l = 0.0;
+int count_pwm = 0;
+double curr_pwm_r = 0.0;
 
 int kval[10] = {5,5,5,5,5};
 
@@ -253,6 +259,7 @@ void leftISR()
   
   else if(dir == FORWARD) {
     forwardDist = (unsigned long)((float) leftForwardTicks / COUNTS_PER_REV * WHEEL_CIRC); 
+    _leftForwardTicks++;
     leftForwardTicks++;
   }
   
@@ -265,7 +272,10 @@ void leftISR()
 void rightISR()
 {
 
-    if(dir == FORWARD) rightForwardTicks++; 
+    if(dir == FORWARD) {
+      rightForwardTicks++; 
+      _rightForwardTicks++;
+    }
     else if (dir == BACKWARD) rightReverseTicks++; 
     else if (dir == RIGHT) rightReverseTicksTurns++; 
     else if (dir == LEFT) rightForwardTicksTurns++; 
@@ -388,25 +398,72 @@ int pwmVal(float speed)
   return (int) ((speed / 100.0) * 255.0);
 }
 
+
+
+
+
+
+
+
+
+void dbprint(char *format, ...) {
+  va_list args;
+  char buffer[128];
+
+  va_start(args, format);
+  vsprintf(buffer, format, args);
+  sendMessage(buffer);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 // Move Alex forward "dist" cm at speed "speed".
 // "speed" is expressed as a percentage. E.g. 50 is
 // move forward at half speed.
 // Specifying a distance of 0 means Alex will
 // continue moving forward indefinitely.
+int moderror(int leftval, int rightval){
+    signed int error = leftval - rightval;
+    return (error <0)? -error : error;
+}
+
+
+
+
+
+/*
 
 void calibrateMotors(){
   int error;
-  error = (error < 0)? -error: error;
+  //error = (error < 0)? -error: error;
   double val = curr_pwm;
+  
   switch(dir){
     case FORWARD:
-      error = leftForwardTicks - rightForwardTicks;
-      if(error){
-        val += error / kval[_FORWARD];
-        analogWrite(RF, val);
-        delayMicroseconds(1);
+
+      error = _leftForwardTicks - _rightForwardTicks;
       
+      if(error!= 0){
+        val += (error *30);
+        Serial.println("val is ");
+        Serial.println(val);
+        Serial.println("error is ");
+        Serial.println(error);
+        analogWrite(RF, val);
       }
+      _leftForwardTicks = 0;
+      _rightForwardTicks = 0;
+      delay(100);
     break;
 
     case BACKWARD:
@@ -421,8 +478,8 @@ void calibrateMotors(){
 
     case RIGHT:
       error = leftForwardTicksTurns - rightReverseTicksTurns;
-      if(error){
-        val += error / kval[_RIGHT];
+      if(error != 0){
+        val += error / 5;
         analogWrite(RR, val);
         delayMicroseconds(1);
       }
@@ -438,6 +495,137 @@ void calibrateMotors(){
     break;
   }
 }
+*/
+
+void calibrateMotors(){
+  double error;
+  int curr_left = 0;
+  int curr_right = 0;
+  
+  int val = curr_pwm_r;
+  
+  switch(dir){
+    case FORWARD:
+      curr_left = leftForwardTicks;
+      curr_right = rightForwardTicks;
+
+      delayMicroseconds(50000);
+      curr_left = leftForwardTicks - curr_left;
+      curr_right = rightForwardTicks - curr_right;
+      error = curr_left - curr_right;
+      
+      if(curr_left == 0 && curr_right == 0){
+        if(count_pwm < 500) {
+          count_pwm++;
+          return;
+        }
+        
+        analogWrite(LF, 255);
+        analogWrite(RF, 255);
+        delay(50);
+        analogWrite(LF, curr_pwm_l);
+        analogWrite(RF, curr_pwm_r);       
+        return;
+      }
+      count_pwm = 0;
+      if(error){
+        //Serial.println(error);
+        val += error*20 ;
+        curr_pwm_r = (val > 255)? 255: 
+                   (val < 0)? 0:
+                   val;
+      //  Serial.print("new error is ");
+       // Serial.println(error*20);
+       // Serial.print("new val is ");
+        //Serial.println(curr_pwm_r);
+        
+        analogWrite(RF, curr_pwm_r);
+      }
+    break;
+
+    case BACKWARD:
+      curr_left = leftReverseTicks;
+      curr_right = rightReverseTicks;
+      delay(50);
+      curr_left = leftReverseTicks - curr_left;
+      curr_right = rightReverseTicks - curr_right;
+      error = curr_left - curr_right;
+      
+      if(error){
+        val += error*20 ;
+        curr_pwm_r = (val > 255)? 255: 
+                   (val < 0)? 0:
+                   val;
+        Serial.print("new error is ");
+        
+        Serial.println(error);
+        Serial.print("new val is ");
+        Serial.println(curr_pwm_r);
+        //curr_pwm = val;
+        analogWrite(RR, curr_pwm_r);
+      }
+    break;
+
+    case RIGHT:
+      curr_left = leftForwardTicksTurns;
+      curr_right = rightReverseTicksTurns;
+      delay(50);
+      curr_left = leftForwardTicksTurns - curr_left;
+      curr_right = rightReverseTicksTurns - curr_right;
+      error = curr_left - curr_right;
+      
+      if(error){
+        val += error*20;
+        curr_pwm_r = (val > 255)? 255: 
+                   (val < 0)? 0:
+                   val;
+        analogWrite(RR, curr_pwm_r);
+        Serial.print("new error is ");
+        Serial.println(error*20);
+        Serial.print("new val is ");
+        Serial.println(curr_pwm_r);
+      }
+    break;
+
+    case LEFT:
+      curr_left = leftReverseTicksTurns;
+      curr_right = rightForwardTicksTurns;
+      delay(50);
+      curr_left = leftReverseTicksTurns - curr_left;
+      curr_right = rightForwardTicksTurns - curr_right;
+      
+      error = curr_left - curr_right;
+      if(error){
+        val += error*20;
+        curr_pwm_r = (val > 255)? 255: 
+                   (val < 0)? 0:
+                   val;
+        analogWrite(RF, curr_pwm_r);
+        Serial.print("The error is");
+        Serial.println(error);
+        Serial.print("The pwval is ");
+        Serial.println(val);
+      }
+    break;
+
+    case STOP:
+      stop();
+    break;
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -453,8 +641,9 @@ void forward(float dist, float speed)
 {
   dir = FORWARD;
   
-  int val = pwmVal(speed);
-  curr_pwm = val;
+  curr_pwm_l = pwmVal(speed);
+  curr_pwm_r = 1.36* curr_pwm_l;
+  
   int error = leftForwardTicks - rightForwardTicks;
   // For now we will ignore dist and move
   // forward indefinitely. We will fix this
@@ -468,8 +657,8 @@ void forward(float dist, float speed)
   if(dist > 0) deltaDist = dist;
   else deltaDist = 9999999;
   newDist = forwardDist + deltaDist;
-  analogWrite(LF, val);
-  analogWrite(RF, val);
+  analogWrite(LF, curr_pwm_l);
+  analogWrite(RF, curr_pwm_r);
   analogWrite(LR, 0);
   analogWrite(RR, 0);
 }
@@ -483,7 +672,7 @@ void reverse(float dist, float speed)
 {
   dir = BACKWARD;
   int val = pwmVal(speed);
-  curr_pwm = val;
+  curr_pwm_r = 1.36 * val;
 
   if(dist > 0) deltaDist = dist;
   else deltaDist = 9999999;
@@ -496,7 +685,7 @@ void reverse(float dist, float speed)
   // RF = Right forward pin, RR = Right reverse pin
   // This will be replaced later with bare-metal code.
   analogWrite(LR, val);
-  analogWrite(RR, val);
+  analogWrite(RR, curr_pwm_r);
   analogWrite(LF, 0);
   analogWrite(RF, 0);
 
@@ -518,7 +707,7 @@ void left(float ang, float speed)
 {
   dir = LEFT;
   int val = pwmVal(speed);
-  curr_pwm = val;
+  curr_pwm_r = (1*val > 255)? 255: 1*val;
   if(ang == 0) deltaTicks = 9999999;
   else deltaTicks = computeDeltaTicks(ang);
   targetTicks = leftReverseTicksTurns + deltaTicks;
@@ -528,7 +717,7 @@ void left(float ang, float speed)
   // We will also replace this code with bare-metal later.
   // To turn left we reverse the left wheel and move
   // the right wheel forward.
-  analogWrite(RF, val);
+  analogWrite(RF, curr_pwm_r);
   analogWrite(LR, val);
   analogWrite(RR, 0);
   analogWrite(LF, 0);
@@ -544,7 +733,7 @@ void right(float ang, float speed)
 {
   dir = RIGHT;
   int val = pwmVal(speed);
-  curr_pwm = val;
+  curr_pwm_r = (1.36*val > 255)? 255: 1.36*val;
 
   if(ang == 0) deltaTicks = 9999999;
   else deltaTicks = computeDeltaTicks(ang);
@@ -554,7 +743,7 @@ void right(float ang, float speed)
   // We will also replace this code with bare-metal later.
   // To turn right we reverse the right wheel and move
   // the left wheel forward.
-  analogWrite(RR, val);
+  analogWrite(RR, curr_pwm_r);
   analogWrite(LF, val);
   analogWrite(RF, 0);
   analogWrite(LR, 0);
@@ -852,17 +1041,27 @@ void loop() {
       }
     }
   }*/
+  signed int error = leftForwardTicks - rightForwardTicks;
+  left(8,85);
+  //reverse(50,50);
+  //forward(0, 40);
+  //forward(0, 50);
+ 
+  
+  
+    
+    //Serial.print("left forward ticks are ");
+  //Serial.println(leftReverseTicks);
+  //Serial.print("right forward ticks are ");
+  //Serial.println(rightReverseTicks);
+  //Serial.print("error is ");
 
-  forward(0, 50);
-  while(count < 100){
-  Serial.print("left forward ticks are ");
-  Serial.println(leftForwardTicksTurns);
-  Serial.print("right forward ticks are ");
-  Serial.println(rightReverseTicksTurns);
+  /*Serial.print("error is ");
+  Serial.println(error);*/
   calibrateMotors();
-  delay(100);
-  count++;
-}
+  delay(200);
   stop();
+  delay(200);
+
   
 }
