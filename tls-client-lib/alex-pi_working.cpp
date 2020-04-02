@@ -381,7 +381,6 @@ void* change_detect_thread(void* p){
 void* movement_change_thread(void* p){
 	char prev = 'x';
 	int count = 0;
-		
 	while(1){
 		if(command == 'a' || command == 'd'){
 			command = count%2? command: 'x';
@@ -396,11 +395,8 @@ void* movement_change_thread(void* p){
 			finalcommand = command;
 			commandflag = 1;
 			if (ok_flag){
-			       	sendCommand(finalcommand);
-				
+			       	sendCommand(finalcommand);	
 			}
-			
-
 		}
 	}
 }

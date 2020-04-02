@@ -22,6 +22,18 @@
 #include "constants.h"
 #include "unistd.h"
 
+int mode = 0;
+
+char d = 'a';
+char command = 'x';
+char prevcommand = 'x';
+char finalcommand = 'x';
+int count = 0;
+int state = 0;
+int commandflag = 0;
+int ok_flag = 1;
+
+
 // Tells us that the network is running.
 static volatile int networkActive=0;
 
@@ -30,6 +42,7 @@ void handleError(const char *buffer)
 	switch(buffer[1])
 	{
 		case RESP_OK:
+			ok_flag = 1;
 			printf("Command / Status OK\n");
 			break;
 
@@ -119,6 +132,7 @@ void sendData(void *conn, const char *buffer, int len)
 		/* TODO: Insert SSL write here to write buffer to network */
 
 		c = sslWrite(conn, buffer, len);
+		ok_flag = 0;
 		/* END TODO */	
 		networkActive = (c > 0);
 	}
@@ -169,114 +183,213 @@ void getParams(int32_t *params)
 
 
 //Transferred from alex_working
-void getParamsAuto(int32_t *params)
+void getParamsAuto(char dir, int32_t* params)
 {
-	switch (commandPacket->command) {
-	case COMMAND_FORWARD:
+	switch (dir) {
+	case 'w':
 		params[0] = 0;
 		params[1] = 65;
 		break;
-	case COMMAND_REVERSE:
+	case 's':
 		params[0] = 0;
 		params[1] = 65;
 		break;
-	case COMMAND_TURN_LEFT:
-		params[0] = 0;
+	case 'a':
+		params[0] = 5;
 		params[1] = 85;
 		break;
-	case COMMAND_TURN_RIGHT:
-		params[0] = 0;
+	case 'd':
+		params[0] = 5;
 		params[1] = 85;
 		break;
+	}
+}
+
+
+void sendCommand(char command)
+{
+	char buffer[10];
+	int32_t params[2];
+
+	buffer[0] = NET_COMMAND_PACKET;
+
+	switch (ch)
+	{
+	case 'p':
+	case 'P':
+		mode = (mode == 1) ? 0 : 1;
+		break;
+
+	case 'f':
+	case 'F':
+	case 'b':
+	case 'B':
+	case 'l':
+	case 'L':
+	case 'r':
+	case 'R':
+		getParams(params);
+		buffer[1] = ch;
+		memcpy(&buffer[2], params, sizeof(params));
+		sendData(conn, buffer, sizeof(buffer));
+		break;
+
+
+	case 'w':
+	case 'W':
+		buffer[1] = 'f';
+		getParamsAuto(buffer[1], params);
+		memcpy(&buffer[2], params, sizeof(params));
+		sendData(conn, buffer, sizeof(buffer));
+		break;
+
+	case 'a':
+	case 'A':
+		buffer[1] = 'l';
+		getParamsAuto(buffer[1], params);
+		memcpy(&buffer[2], params, sizeof(params));
+		sendData(conn, buffer, sizeof(buffer));
+		break;
+
+	case 's':
+	case 'S':
+		buffer[1] = 'b';
+		getParamsAuto(buffer[1], params);
+		memcpy(&buffer[2], params, sizeof(params));
+		sendData(conn, buffer, sizeof(buffer));
+		break;
+
+	case 'd':
+	case 'D':
+		buffer[1] = 'r';
+		getParamsAuto(buffer[1], params);
+		memcpy(&buffer[2], params, sizeof(params));
+		sendData(conn, buffer, sizeof(buffer));
+		break;
+
+	case 's':
+	case 'S':
+	case 'c':
+	case 'C':
+	case 'g':
+	case 'G':
+		params[0] = 0;
+		params[1] = 0;
+		memcpy(&buffer[2], params, sizeof(params));
+		buffer[1] = ch;
+		sendData(conn, buffer, sizeof(buffer));
+		break;
+
+	case 'q':
+	case 'Q':
+		quit = 1;
+		break;
+
+	default:
+		printf("BAD COMMAND\n"); */
+}
+
+
+void* movement_change_thread(void* p) {
+	char prev = 'x';
+	int count = 0;
+	while (1) {
+		if (command == 'a' || command == 'd') {
+			command = count % 2 ? command : 'x';
+			count++;
+			usleep(10000);
+		}
+		if (command != prev) {
+			prev = command;
+			finalcommand = command;
+			commandflag = 1;
+			if (ok_flag) {
+				sendCommand(finalcommand);
+			}
+		}
 	}
 }
 
 void *writerThread(void *conn)
 {
 	int quit=0;
+	char ch;
+	pthread_t commandthread;
+	pthread_create(&commandthread, NULL, movement_change_thread, NULL);
 
-	while(!quit)
+	while (!quit)
 	{
-		char ch;
-		printf("Command (f=forward, b=reverse, l=turn left, r=turn right, s=stop, c=clear stats, g=get stats q=exit)\n");
-		scanf("%c", &ch);
-
-		// Purge extraneous characters from input stream
-		flushInput();
-
-		char buffer[10];
-		int32_t params[2];
-
-		buffer[0] = NET_COMMAND_PACKET;
-		switch(ch)
-		{
-			
-		case 'p':
-		case'P':
-			mode = (mode == 1) ? 0 : 1;
+		switch (mode) {
+		case 1: 
+			endwin();
+			printf("Command (p=toggle to easy mode, f=forward, b=reverse, l=turn left, r=turn right, x=stop, c=clear stats, g=get stats q=exit)\n\r");
+			printf("Easy Mode (w=forward, s=reverse, a=turn left, d=turn right, x = stop, c=clear stats, g=get stats, q=exit)\n\r");
+			scanf("%c", &ch);
+			// Purge extraneous characters from input stream
+			flushInput();
+			sendCommand(ch);
 			break;
-			
-		
-		
-		
-			case 'f':
-			case 'F':
-			case 'b':
-			case 'B':
-			case 'l':
-			case 'L':
-			case 'r':
-			case 'R':
-						getParams(params);
-						buffer[1] = ch;
-						memcpy(&buffer[2], params, sizeof(params));
-						sendData(conn, buffer, sizeof(buffer));
-						break;
-
-
-			case 'w':
-			case 'W':
-			case 'a':
-			case 'A':
-			case 's':
-			case 'S':
-			case 'd':
-			case 'D':
-				getParamsAuto(params);
-				buffer[1] = ch;
-				memcpy(&buffer[2], params, sizeof(params));
-				sendData(conn, buffer, sizeof(buffer));
-				break;
-
-		    
-			case 's':
-			case 'S':
-			case 'c':
-			case 'C':
-			case 'g':
-			case 'G':
-					params[0]=0;
-					params[1]=0;
-					memcpy(&buffer[2], params, sizeof(params));
-					buffer[1] = ch;
-					sendData(conn, buffer, sizeof(buffer));
-					break;
-			case 'q':
-			case 'Q':
-				quit=1;
-				break;
-			default:
-				printf("BAD COMMAND\n");
 		}
+
+		case 1: clear();
+			if (!start) {
+				initscr();
+				cbreak();
+				noecho();
+				nodelay(stdscr, TRUE);
+				scrollok(stdscr, TRUE);
+			}
+			start = 1;
+			if (j > 0) {
+			command = (d == -1 || d == (char)255) ? prevcommand : d;
+			prevcommand = command;
+			if (_count <= 1) usleep(470000);
+
+		}
+		else if (i % 3 == 0) {
+			command = 'x';
+			prevcommand = command;
+		}
+		if (ok_flag) printw("Ready!\n");
+		else {
+			printw("Busy!\n");
+			getch();
+		}
+
+		printw("command is %c\n", finalcommand);
+
+		if (kbhit()) {
+			getch();
+			i = 0;
+			j++;
+			_count++;
+			refresh();
+		}
+		else {
+			_count = 0;
+			i++;
+			j = 0;
+			refresh();
+			usleep(70000);
+		}
+		break;
 	}
-
+	endwin();
 	printf("Exiting keyboard thread\n");
-
     /* TODO: Stop the client loop and call EXIT_THREAD */
 	stopClient();
 	EXIT_THREAD(conn);
     /* END TODO */
 }
+
+
+
+
+
+
+
+
+
 
 /* TODO: #define filenames for the client private key, certificatea,
    CA filename, etc. that you need to create a client */

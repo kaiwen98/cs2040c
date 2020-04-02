@@ -1,4 +1,14 @@
 
+// Routines to create a TLS client
+#include "make_tls_client.h"
+
+// Network packet types
+#include "netconstants.h"
+
+// Packet types, error codes, etc.
+#include "constants.h"
+
+//Addtional libraries from Alex_working
 #include <stdio.h>
 #include <pthread.h>
 #include <semaphore.h>
@@ -12,10 +22,6 @@
 #include "constants.h"
 #include "unistd.h"
 
-#define PORT_NAME			"/dev/ttyACM0"
-#define BAUD_RATE			B9600
-
-int exitFlag=0;
 int mode = 0;
 
 char d = 'a';
@@ -23,476 +29,402 @@ char command = 'x';
 char prevcommand = 'x';
 char finalcommand = 'x';
 int count = 0;
-int dircount = 0;
 int state = 0;
 int commandflag = 0;
+int ok_flag = 1;
 
-sem_t _xmitSema;
 
-void handleError(TResult error)
+// Tells us that the network is running.
+static volatile int networkActive = 0;
+
+void handleError(const char* buffer)
 {
-	switch(error)
+	switch (buffer[1])
 	{
-		case PACKET_BAD:
-			printf("ERROR: Bad Magic Number\n\r");
-			break;
+	case RESP_OK:
+		ok_flag = 1;
+		printf("Command / Status OK\n");
+		break;
 
-		case PACKET_CHECKSUM_BAD:
-			printf("ERROR: Bad checksum\n\r");
-			break;
+	case RESP_BAD_PACKET:
+		printf("BAD MAGIC NUMBER FROM ARDUINO\n");
+		break;
 
-		default:
-			printf("ERROR: UNKNOWN ERROR\n\r");
+	case RESP_BAD_CHECKSUM:
+		printf("BAD CHECKSUM FROM ARDUINO\n");
+		break;
+
+	case RESP_BAD_COMMAND:
+		printf("PI SENT BAD COMMAND TO ARDUINO\n");
+		break;
+
+	case RESP_BAD_RESPONSE:
+		printf("PI GOT BAD RESPONSE FROM ARDUINO\n");
+		break;
+
+	default:
+		printf("PI IS CONFUSED!\n");
 	}
 }
 
-void handleStatus(TPacket *packet)
+void handleStatus(const char* buffer)
 {
-	printf("\n\r ------- ALEX STATUS REPORT ------- \n\r\n\r");
-	printf("Left Forward Ticks:\t\t%d\n\r", packet->params[0]);
-	printf("Right Forward Ticks:\t\t%d\n\r", packet->params[1]);
-	printf("Left Reverse Ticks:\t\t%d\n\r", packet->params[2]);
-	printf("Right Reverse Ticks:\t\t%d\n\r", packet->params[3]);
-	printf("Left Forward Ticks Turns:\t%d\n\r", packet->params[4]);
-	printf("Right Forward Ticks Turns:\t%d\n\r", packet->params[5]);
-	printf("Left Reverse Ticks Turns:\t%d\n\r", packet->params[6]);
-	printf("Right Reverse Ticks Turns:\t%d\n\r", packet->params[7]);
-	printf("Forward Distance:\t\t%d\n\r", packet->params[8]);
-	printf("Reverse Distance:\t\t%d\n\r", packet->params[9]);
-	printf("\n\r---------------------------------------\n\r\n\r");
+	int32_t data[16];
+	memcpy(data, &buffer[1], sizeof(data));
+
+	printf("\n ------- ALEX STATUS REPORT ------- \n\n");
+	printf("Left Forward Ticks:\t\t%d\n", data[0]);
+	printf("Right Forward Ticks:\t\t%d\n", data[1]);
+	printf("Left Reverse Ticks:\t\t%d\n", data[2]);
+	printf("Right Reverse Ticks:\t\t%d\n", data[3]);
+	printf("Left Forward Ticks Turns:\t%d\n", data[4]);
+	printf("Right Forward Ticks Turns:\t%d\n", data[5]);
+	printf("Left Reverse Ticks Turns:\t%d\n", data[6]);
+	printf("Right Reverse Ticks Turns:\t%d\n", data[7]);
+	printf("Forward Distance:\t\t%d\n", data[8]);
+	printf("Reverse Distance:\t\t%d\n", data[9]);
+	printf("\n---------------------------------------\n\n");
 }
 
-void handleResponse(TPacket *packet)
+void handleMessage(const char* buffer)
 {
-	// The response code is stored in command
-	switch(packet->command)
+	printf("MESSAGE FROM ALEX: %s\n", &buffer[1]);
+}
+
+void handleCommand(const char* buffer)
+{
+	// We don't do anything because we issue commands
+	// but we don't get them. Put this here
+	// for future expansion
+}
+
+void handleNetwork(const char* buffer, int len)
+{
+	// The first byte is the packet type
+	int type = buffer[0];
+
+	switch (type)
 	{
-		case RESP_OK:
-			printf("Command OK\n\r");
-			break;
+	case NET_ERROR_PACKET:
+		handleError(buffer);
+		break;
 
-		case RESP_STATUS:
-			handleStatus(packet);
-			break;
+	case NET_STATUS_PACKET:
+		handleStatus(buffer);
+		break;
 
-		default:
-			printf("Arduino is confused\n\r");
+	case NET_MESSAGE_PACKET:
+		handleMessage(buffer);
+		break;
+
+	case NET_COMMAND_PACKET:
+		handleCommand(buffer);
+		break;
 	}
 }
 
-void handleErrorResponse(TPacket *packet)
+void sendData(void* conn, const char* buffer, int len)
 {
-	// The error code is returned in command
-	switch(packet->command)
+	int c;
+	printf("\nSENDING %d BYTES DATA\n\n", len);
+	if (networkActive)
 	{
-		case RESP_BAD_PACKET:
-			printf("Arduino received bad magic number\n\r");
-			break;
+		/* TODO: Insert SSL write here to write buffer to network */
 
-		case RESP_BAD_CHECKSUM:
-			printf("Arduino received bad checksum\n\r");
-			break;
-
-		case RESP_BAD_COMMAND:
-			printf("Arduino received bad command\n\r");
-			break;
-
-		case RESP_BAD_RESPONSE:
-			printf("Arduino received unexpected response\n\r");
-			break;
-
-		default:
-			printf("Arduino reports a weird error\n\r");
+		c = sslWrite(conn, buffer, len);
+		ok_flag = 0;
+		/* END TODO */
+		networkActive = (c > 0);
 	}
 }
 
-void handleMessage(TPacket *packet)
+void* readerThread(void* conn)
 {
-	printf("Message from Alex: %s\n\r", packet->data);
-}
-
-void handlePacket(TPacket *packet)
-{
-	switch(packet->packetType)
-	{
-		case PACKET_TYPE_COMMAND:
-			// Only we send command packets, so ignore
-			break;
-
-		case PACKET_TYPE_RESPONSE:
-			handleResponse(packet);
-			break;
-
-		case PACKET_TYPE_ERROR:
-			handleErrorResponse(packet);
-			break;
-
-		case PACKET_TYPE_MESSAGE:
-			handleMessage(packet);
-			break;
-	}
-}
-
-void sendPacket(TPacket *packet)
-{
-	char buffer[PACKET_SIZE];
-	int len = serialize(buffer, packet, sizeof(TPacket));
-
-	serialWrite(buffer, len);
-}
-
-void *receiveThread(void *p)
-{
-	char buffer[PACKET_SIZE];
+	char buffer[128];
 	int len;
-	TPacket packet;
-	TResult result;
-	int counter=0;
 
-	while(1)
+	while (networkActive)
 	{
-		len = serialRead(buffer);
-		counter+=len;
-		if(len > 0)
-		{
-			result = deserialize(buffer, len, &packet);
+		/* TODO: Insert SSL read here into buffer */
 
-			if(result == PACKET_OK)
-			{
-				counter=0;
-				handlePacket(&packet);
-			}
-			else 
-				if(result != PACKET_INCOMPLETE)
-				{
-					printf("PACKET ERROR\n\r");
-					handleError(result);
-				}
-		}
+		printf("read %d bytes from server.\n", len);
+		len = sslRead(conn, buffer, sizeof(buffer));
+
+		/* END TODO */
+
+		networkActive = (len > 0);
+
+		if (networkActive)
+			handleNetwork(buffer, len);
 	}
+
+	printf("Exiting network listener thread\n");
+
+	/* TODO: Stop the client loop and call EXIT_THREAD */
+	stopClient();
+	EXIT_THREAD(conn);
+	/* END TODO */
 }
 
 void flushInput()
 {
 	char c;
 
-	while((c = getchar()) != '\n' && c != EOF);
+	while ((c = getchar()) != '\n' && c != EOF);
 }
 
-void getParams(TPacket *commandPacket)
+void getParams(int32_t* params)
 {
-	printf("Enter distance/angle in cm/degrees (e.g. 50) and power in %% (e.g. 75) separated by space.\n\r");
-	printf("E.g. 50 75 means go at 50 cm at 75%% power for forward/backward, or 50 degrees left or right turn at 75%%  power\n\r");
-	scanf("%d %d", &commandPacket->params[0], &commandPacket->params[1]);
+	printf("Enter distance/angle in cm/degrees (e.g. 50) and power in %% (e.g. 75) separated by space.\n");
+	printf("E.g. 50 75 means go at 50 cm at 75%% power for forward/backward, or 50 degrees left or right turn at 75%%  power\n");
+	scanf("%d %d", &params[0], &params[1]);
 	flushInput();
 }
 
-void getParamsAuto(TPacket *commandPacket)
+
+//Transferred from alex_working
+void getParamsAuto(char dir, int32_t* params)
 {
-	switch(commandPacket->command){
-		case COMMAND_FORWARD:
-			commandPacket->params[0] = 0;
-			commandPacket->params[1] = 50;
-			break;
-		case COMMAND_REVERSE:
-			commandPacket->params[0] = 0;
-			commandPacket->params[1] = 50;
-			break;
-		case COMMAND_TURN_LEFT:
-			commandPacket->params[0] = 0;
-			commandPacket->params[1] = 50;
-			break;
-		case COMMAND_TURN_RIGHT: 
-			commandPacket->params[0] = 0;
-			commandPacket->params[1] = 50;
-			break;
+	switch (dir) {
+	case 'w':
+		params[0] = 0;
+		params[1] = 65;
+		break;
+	case 's':
+		params[0] = 0;
+		params[1] = 65;
+		break;
+	case 'a':
+		params[0] = 5;
+		params[1] = 85;
+		break;
+	case 'd':
+		params[0] = 5;
+		params[1] = 85;
+		break;
 	}
 }
+
 
 void sendCommand(char command)
 {
-	TPacket commandPacket;
+	char buffer[10];
+	int32_t params[2];
 
-	commandPacket.packetType = PACKET_TYPE_COMMAND;
+	buffer[0] = NET_COMMAND_PACKET;
 
-	switch(command)
+	switch (ch)
 	{
-		case 'p':
-		case 'P':
-			mode = (mode == 1)?0:1;
-			break;
+	case 'p':
+	case 'P':
+		mode = (mode == 1) ? 0 : 1;
+		break;
 
-		case 'w':
-		case 'W':
-			getParamsAuto(&commandPacket);
-			commandPacket.command = COMMAND_FORWARD;
-			sendPacket(&commandPacket);
-			break;
-
-		case 'a':
-		case 'A':
-			getParamsAuto(&commandPacket);
-			commandPacket.command = COMMAND_TURN_LEFT;
-			sendPacket(&commandPacket);
-			break;
-
-		case 's':
-		case 'S':
-			getParamsAuto(&commandPacket);
-			commandPacket.command = COMMAND_REVERSE;
-			sendPacket(&commandPacket);
-			break;
-
-		case 'd':
-		case 'D':
-			getParamsAuto(&commandPacket);
-			commandPacket.command = COMMAND_TURN_RIGHT;
-			sendPacket(&commandPacket);
-			break;
+	case 'f':
+	case 'F':
+	case 'b':
+	case 'B':
+	case 'l':
+	case 'L':
+	case 'r':
+	case 'R':
+		getParams(params);
+		buffer[1] = ch;
+		memcpy(&buffer[2], params, sizeof(params));
+		sendData(conn, buffer, sizeof(buffer));
+		break;
 
 
-		case 'f':
-		case 'F':
-			getParams(&commandPacket);
-			commandPacket.command = COMMAND_FORWARD;
-			sendPacket(&commandPacket);
-			break;
+	case 'w':
+	case 'W':
+		buffer[1] = 'f';
+		getParamsAuto(buffer[1], params);
+		memcpy(&buffer[2], params, sizeof(params));
+		sendData(conn, buffer, sizeof(buffer));
+		break;
 
-		case 'b':
-		case 'B':
-			getParams(&commandPacket);
-			commandPacket.command = COMMAND_REVERSE;
-			sendPacket(&commandPacket);
-			break;
+	case 'a':
+	case 'A':
+		buffer[1] = 'l';
+		getParamsAuto(buffer[1], params);
+		memcpy(&buffer[2], params, sizeof(params));
+		sendData(conn, buffer, sizeof(buffer));
+		break;
 
-		case 'l':
-		case 'L':
-			getParams(&commandPacket);
-			commandPacket.command = COMMAND_TURN_LEFT;
-			sendPacket(&commandPacket);
-			break;
+	case 's':
+	case 'S':
+		buffer[1] = 'b';
+		getParamsAuto(buffer[1], params);
+		memcpy(&buffer[2], params, sizeof(params));
+		sendData(conn, buffer, sizeof(buffer));
+		break;
 
-		case 'r':
-		case 'R':
-			getParams(&commandPacket);
-			commandPacket.command = COMMAND_TURN_RIGHT;
-			sendPacket(&commandPacket);
-			break;
+	case 'd':
+	case 'D':
+		buffer[1] = 'r';
+		getParamsAuto(buffer[1], params);
+		memcpy(&buffer[2], params, sizeof(params));
+		sendData(conn, buffer, sizeof(buffer));
+		break;
 
-		case 'x':
-		case 'X':
-			commandPacket.command = COMMAND_STOP;
-			sendPacket(&commandPacket);
-			break;
+	case 's':
+	case 'S':
+	case 'c':
+	case 'C':
+	case 'g':
+	case 'G':
+		params[0] = 0;
+		params[1] = 0;
+		memcpy(&buffer[2], params, sizeof(params));
+		buffer[1] = ch;
+		sendData(conn, buffer, sizeof(buffer));
+		break;
 
-		case 'c':
-		case 'C':
-			commandPacket.command = COMMAND_CLEAR_STATS;
-			commandPacket.params[0] = 0;
-			sendPacket(&commandPacket);
-			break;
+	case 'q':
+	case 'Q':
+		quit = 1;
+		break;
 
-		case 'g':
-		case 'G':
-			commandPacket.command = COMMAND_GET_STATS;
-			sendPacket(&commandPacket);
-			break;
-
-		case 'q':
-		case 'Q':
-			exitFlag=1;
-			break;
-
-		default:
-			printf("Bad command\n\r");
-
-	}
-}
-
-
-///////////////////////////////////////////////
-/*void* command_toggle_thread(void* p){
-  char prev = 'x';
-  while(1){
-
-  command = d;
-  prev = d;
-  dircount = 0;
-  }
-  else dircount++;
-  }
-  else command = 'x';
-  }
-  }*/
-
-
-void* change_detect_thread(void* p){
-	if(command == -1) command = prevcommand;
-	/*clock_t time;
-	  int count = 0;
-	  int curr;
-	  int i = 0;
-	  int j = 0;
-	  while(1){
-	  if(j == 1) command = d;
-	  else if(i %3 == 0) command = 'x';
-
-	  if (state) {
-	//printw("Key pressed! It was: %d\n", getch());
-	getch();
-	i = 0;
-	j = 1;
-	refresh();
-	} else {
-	count++;
-	if(count <= 2) usleep(200000);
-
-	else{
-	count = 0;
-	i++;
-	j = 0;
-	refresh();
-	usleep(100000);
-	}
-	}
+	default:
+		printf("BAD COMMAND\n"); */
 	}
 
 
-	time = clock();
-	prev = count;
-	while(clock() - time < 300000);
-	if(count == prev){
-	command = 'x';
-	count = 0;
-	} 
-	} */
-
-
-	}
-
-void* movement_change_thread(void* p){
-	char prev = 'x';	
-	while(1){
-		if(command != prev){
-			//	if(command == 'x') printw("Easy Mode (w=forward, s=reverse, a=turn left, d=turn right, x = stop, c=clear stats, g=get stats, q=exit)\n");
-			prev = command;
-			finalcommand = command;
-			commandflag = 1;
-			sendCommand(finalcommand);
-			commandflag = 0;
-
+	void* movement_change_thread(void* p) {
+		char prev = 'x';
+		int count = 0;
+		while (1) {
+			if (command == 'a' || command == 'd') {
+				command = count % 2 ? command : 'x';
+				count++;
+				usleep(10000);
+			}
+			if (command != prev) {
+				prev = command;
+				finalcommand = command;
+				commandflag = 1;
+				if (ok_flag) {
+					sendCommand(finalcommand);
+				}
+			}
 		}
 	}
-}
 
-
-int kbhit(void)
-{
-	d = getch();
-	//printw("d is %c, %d\n",d, d); 
-	if (d != (char)255) {
-		ungetch(d);
-		return 1;
-	} else {
-		return 0;
-	}
-}
-///////////////////////////////////////////////////////////////
-
-
-
-int main()
-{
-	int start = 0;
-	int i= 0, j = 0;
-	int _count = 0;
-	// Connect to the Arduino
-	startSerial(PORT_NAME, BAUD_RATE, 8, 'N', 1, 5);
-
-	// Sleep for two seconds
-	printf("WAITING TWO SECONDS FOR ARDUINO TO REBOOT\n\r");
-	sleep(2);
-	printf("DONE\n\r");
-
-	// Spawn receiver thread
-	pthread_t recv;
-	pthread_t commandthread[3];
-	pthread_create(&recv, NULL, receiveThread, NULL);
-	//pthread_create(&commandthread[0], NULL, command_toggle_thread, NULL);
-	//pthread_create(&commandthread[1], NULL, change_detect_thread, NULL);
-	pthread_create(&commandthread[2], NULL, movement_change_thread, NULL);
-
-	// Send a hello packet
-	TPacket helloPacket;
-
-	helloPacket.packetType = PACKET_TYPE_HELLO;
-	sendPacket(&helloPacket);
-
-
-	while(!exitFlag)
+	void* writerThread(void* conn)
 	{
+		int quit = 0;
 		char ch;
-		switch (mode){
-			case 0: endwin();
-				start = 0;
+		pthread_t commandthread;
+		pthread_create(&commandthread, NULL, movement_change_thread, NULL);
+
+		while (!quit)
+		{
+			switch (mode) {
+			case 1:
+				endwin();
 				printf("Command (p=toggle to easy mode, f=forward, b=reverse, l=turn left, r=turn right, x=stop, c=clear stats, g=get stats q=exit)\n\r");
 				printf("Easy Mode (w=forward, s=reverse, a=turn left, d=turn right, x = stop, c=clear stats, g=get stats, q=exit)\n\r");
 				scanf("%c", &ch);
+				// Purge extraneous characters from input stream
 				flushInput();
 				sendCommand(ch);
 				break;
+			}
 
-			case 1: clear();
-				//printf("The final command is %c\n\r", finalcommand);
-				if(!start){
-					initscr();
-					cbreak();
-					noecho();
-					nodelay(stdscr, TRUE);
-					scrollok(stdscr, TRUE);
-				}
-				start = 1;
-
-				if(j == 1){
-					//printw("character of d is %c\n", d);
-					//printw("Number of d is %d\n", d);
-					command = (d == -1 || d == (char)255)? prevcommand:d;
-					prevcommand = command;
-					if(_count <= 1) usleep(490000);
-				//	printw("button\n");
-
-				} 
-				else if(i%2 == 0){
-					command = 'x';
-					prevcommand = command;
-				//	printw("end\n");
-
-				}
-				
-				printw("command is %c\n", finalcommand);
-
-				if (kbhit()) {
-					getch();
-					i = 0;
-					j = 1;
-					_count++;
-					refresh();
-				} 
-				
-				else {
-					_count = 0;
-					i++;
-					j = 0;
-					refresh();
-					usleep(35000);
-				}
-				break;
+	case 1: clear();
+		if (!start) {
+			initscr();
+			cbreak();
+			noecho();
+			nodelay(stdscr, TRUE);
+			scrollok(stdscr, TRUE);
 		}
+		start = 1;
+		if (j > 0) {
+			command = (d == -1 || d == (char)255) ? prevcommand : d;
+			prevcommand = command;
+			if (_count <= 1) usleep(470000);
+
+		}
+		else if (i % 3 == 0) {
+			command = 'x';
+			prevcommand = command;
+		}
+		if (ok_flag) printw("Ready!\n");
+		else {
+			printw("Busy!\n");
+			getch();
+		}
+
+		printw("command is %c\n", finalcommand);
+
+		if (kbhit()) {
+			getch();
+			i = 0;
+			j++;
+			_count++;
+			refresh();
+		}
+		else {
+			_count = 0;
+			i++;
+			j = 0;
+			refresh();
+			usleep(70000);
+		}
+		break;
+		}
+		endwin();
+		printf("Exiting keyboard thread\n");
+		/* TODO: Stop the client loop and call EXIT_THREAD */
+		stopClient();
+		EXIT_THREAD(conn);
+		/* END TODO */
 	}
-	// Purge extraneous characters from input stream
 
 
-	endwin();
-	printf("Closing connection to Arduino.\n\r");
-	endSerial();
-}
+
+
+
+
+
+
+
+
+	/* TODO: #define filenames for the client private key, certificatea,
+	   CA filename, etc. that you need to create a client */
+#define SERVER_NAME		"192.168.43.186"
+#define PORT_NUM			5000
+#define CA_CERT_FNAME		"signing.pem"
+#define CLIENT_CERT_FNAME	"laptop.crt"
+#define CLIENT_KEY_FNAME	"laptop.key"
+#define SERVER_NAME_ON_CERT	"alex.epp.com" 
+
+	   /* END TODO */
+	void connectToServer(const char* serverName, int portNum)
+	{
+		/* TODO: Create a new client */
+		createClient(SERVER_NAME, PORT_NUM, 1, CA_CERT_FNAME, SERVER_NAME_ON_CERT,
+			1, CLIENT_CERT_FNAME, CLIENT_KEY_FNAME, readerThread, writerThread);
+		/* END TODO */
+	}
+
+	int main(int ac, char** av)
+	{
+		if (ac != 3)
+		{
+			fprintf(stderr, "\n\n%s <IP address> <Port Number>\n\n", av[0]);
+			exit(-1);
+		}
+
+		networkActive = 1;
+		connectToServer(av[1], atoi(av[2]));
+
+		/* TODO: Add in while loop to prevent main from exiting while the
+		client loop is running */
+		while (client_is_running());
+
+
+		/* END TODO */
+		printf("\nMAIN exiting\n\n");
+	}
