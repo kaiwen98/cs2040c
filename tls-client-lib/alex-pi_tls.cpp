@@ -16,10 +16,6 @@
 #include <stdint.h>
 #include <time.h>
 #include <ncurses.h>
-#include "packet.h"
-#include "serial.h"
-#include "serialize.h"
-#include "constants.h"
 #include "unistd.h"
 
 int mode = 0;
@@ -206,7 +202,7 @@ void getParamsAuto(char dir, int32_t* params)
 }
 
 
-void sendCommand(char command)
+void sendCommand(char ch, void* conn)
 {
 	char buffer[10];
 	int32_t params[2];
@@ -267,26 +263,13 @@ void sendCommand(char command)
 		sendData(conn, buffer, sizeof(buffer));
 		break;
 
-	case 's':
-	case 'S':
-	case 'c':
-	case 'C':
-	case 'g':
-	case 'G':
-		params[0] = 0;
-		params[1] = 0;
-		memcpy(&buffer[2], params, sizeof(params));
-		buffer[1] = ch;
-		sendData(conn, buffer, sizeof(buffer));
-		break;
-
 	case 'q':
 	case 'Q':
 		quit = 1;
 		break;
 
 	default:
-		printf("BAD COMMAND\n"); */
+		printf("BAD COMMAND\n"); 
 	}
 
 
@@ -319,8 +302,8 @@ void sendCommand(char command)
 
 		while (!quit)
 		{
-			switch (mode) {
-			case 1:
+		switch (mode) {
+		case 0:
 				endwin();
 				printf("Command (p=toggle to easy mode, f=forward, b=reverse, l=turn left, r=turn right, x=stop, c=clear stats, g=get stats q=exit)\n\r");
 				printf("Easy Mode (w=forward, s=reverse, a=turn left, d=turn right, x = stop, c=clear stats, g=get stats, q=exit)\n\r");
@@ -329,58 +312,62 @@ void sendCommand(char command)
 				flushInput();
 				sendCommand(ch);
 				break;
+			
+
+		case 1: clear();
+			if (!start) {
+				initscr();
+				cbreak();
+				noecho();
+				nodelay(stdscr, TRUE);
+				scrollok(stdscr, TRUE);
+			}
+			start = 1;
+			if (j > 0) {
+				command = (d == -1 || d == (char)255) ? prevcommand : d;
+				prevcommand = command;
+				if (_count <= 1) usleep(470000);
+
+			}
+			else if (i % 3 == 0) {
+				command = 'x';
+				prevcommand = command;
+			}
+			if (ok_flag) printw("Ready!\n");
+			else {
+				printw("Busy!\n");
+				getch();
 			}
 
-	case 1: clear();
-		if (!start) {
-			initscr();
-			cbreak();
-			noecho();
-			nodelay(stdscr, TRUE);
-			scrollok(stdscr, TRUE);
-		}
-		start = 1;
-		if (j > 0) {
-			command = (d == -1 || d == (char)255) ? prevcommand : d;
-			prevcommand = command;
-			if (_count <= 1) usleep(470000);
+			printw("command is %c\n", finalcommand);
 
+			if (kbhit()) {
+				getch();
+				i = 0;
+				j++;
+				_count++;
+				refresh();
+			}
+			else {
+				_count = 0;
+				i++;
+				j = 0;
+				refresh();
+				usleep(70000);
+			}
+			break;
 		}
-		else if (i % 3 == 0) {
-			command = 'x';
-			prevcommand = command;
-		}
-		if (ok_flag) printw("Ready!\n");
-		else {
-			printw("Busy!\n");
-			getch();
-		}
-
-		printw("command is %c\n", finalcommand);
-
-		if (kbhit()) {
-			getch();
-			i = 0;
-			j++;
-			_count++;
-			refresh();
-		}
-		else {
-			_count = 0;
-			i++;
-			j = 0;
-			refresh();
-			usleep(70000);
-		}
-		break;
-		}
+	}
 		endwin();
 		printf("Exiting keyboard thread\n");
 		/* TODO: Stop the client loop and call EXIT_THREAD */
 		stopClient();
 		EXIT_THREAD(conn);
 		/* END TODO */
-	}
+}
+	
+
+	
 
 
 
