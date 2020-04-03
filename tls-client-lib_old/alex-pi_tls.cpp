@@ -28,7 +28,7 @@ int count = 0;
 int state = 0;
 int commandflag = 0;
 int ok_flag = 1;
-
+int quit = 1;
 
 // Tells us that the network is running.
 static volatile int networkActive = 0;
@@ -271,9 +271,10 @@ void sendCommand(char ch, void* conn)
 	default:
 		printf("BAD COMMAND\n"); 
 	}
+}
 
 
-	void* movement_change_thread(void* p) {
+	void* movement_change_thread(void *conn) {
 		char prev = 'x';
 		int count = 0;
 		while (1) {
@@ -287,18 +288,32 @@ void sendCommand(char ch, void* conn)
 				finalcommand = command;
 				commandflag = 1;
 				if (ok_flag) {
-					sendCommand(finalcommand);
+					sendCommand(finalcommand, conn);
 				}
 			}
 		}
 	}
 
+
+	int kbhit(void){
+		d = getch();
+		if(d != (char)255){
+			ungetch(d);
+			return 1;
+		}else{
+			return 0;
+		}
+	}
+
+
 	void* writerThread(void* conn)
 	{
-		int quit = 0;
 		char ch;
+		int start = 0;
+		int i = 0, j = 0;
+		int _count = 0;
 		pthread_t commandthread;
-		pthread_create(&commandthread, NULL, movement_change_thread, NULL);
+		pthread_create(&commandthread, NULL, movement_change_thread, (void*) conn);
 
 		while (!quit)
 		{
@@ -310,7 +325,7 @@ void sendCommand(char ch, void* conn)
 				scanf("%c", &ch);
 				// Purge extraneous characters from input stream
 				flushInput();
-				sendCommand(ch);
+				sendCommand(ch, conn);
 				break;
 			
 
@@ -378,6 +393,7 @@ void sendCommand(char ch, void* conn)
 
 
 
+
 	/* TODO: #define filenames for the client private key, certificatea,
 	   CA filename, etc. that you need to create a client */
 #define SERVER_NAME		"192.168.43.186"
@@ -414,4 +430,4 @@ void sendCommand(char ch, void* conn)
 
 		/* END TODO */
 		printf("\nMAIN exiting\n\n");
-	}
+}
